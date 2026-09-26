@@ -1,0 +1,194 @@
+[
+  {
+    "id": "case_01",
+    "query": "Cold work tooling, max toughness, HRC around 60, zero cobalt.",
+    "expected_top_3": ["ASP 2012", "ASP 2023"],
+    "numeric_rules": {
+      "co_pct": ["==", 0.0],
+      "hardness_max": [">=", 60.0]
+    },
+    "allow_no_match": false,
+    "description": "Checks zero cobalt filter and toughness-focused cold work retrieval."
+  },
+  {
+    "id": "case_02",
+    "query": "High wear resistance drill grade, >8% Cobalt",
+    "expected_top_3": ["ASP 2060", "ASP 2030", "ASP 2048", "ASP 2190", "Evoloop M42"],
+    "numeric_rules": {
+      "co_pct": [">", 8.0]
+    },
+    "allow_no_match": false,
+    "description": "Verifies strict greater-than filtering on cobalt content."
+  },
+  {
+    "id": "case_03",
+    "query": "Dedicated steel for manufacturing machine taps, balanced grindability and toughness.",
+    "expected_top_3": ["BlueTap Max", "ASP 2023"],
+    "numeric_rules": {
+      "hardness_max": [">=", 64.0]
+    },
+    "allow_no_match": false,
+    "description": "Evaluates tap-specific semantic retrieval."
+  },
+  {
+    "id": "case_04",
+    "query": "Extreme wear resistance industrial granulator knives, non-cobalt, high vanadium (>5% vanadium).",
+    "expected_top_3": ["ASP 2011", "ASP 2053"],
+    "numeric_rules": {
+      "co_pct": ["==", 0.0],
+      "v_pct": [">=", 5.0]
+    },
+    "allow_no_match": false,
+    "description": "Verifies high-vanadium knife grade selection with zero cobalt."
+  },
+  {
+    "id": "case_05",
+    "query": "Plastic injection molds in corrosive environment, stainless high chromium PM tool steel.",
+    "expected_top_3": ["ASP APZ10"],
+    "numeric_rules": {
+      "cr_pct": [">=", 15.0]
+    },
+    "allow_no_match": false,
+    "description": "Verifies martensitic stainless PM grade APZ10 selection."
+  },
+  {
+    "id": "case_06",
+    "query": "Dry high-speed gear skiving requiring extreme hot hardness and ultra-high cobalt (>20% cobalt).",
+    "expected_top_3": ["ASP 2190"],
+    "numeric_rules": {
+      "co_pct": [">=", 20.0],
+      "hardness_max": [">=", 68.0]
+    },
+    "allow_no_match": false,
+    "description": "Evaluates unique 29% cobalt specialty grade retrieval."
+  },
+  {
+    "id": "case_07",
+    "query": "Heavy blanking punches and stamping dies requiring max toughness and shock resistance, zero cobalt.",
+    "expected_top_3": ["ASP 2012"],
+    "numeric_rules": {
+      "co_pct": ["==", 0.0],
+      "hardness_max": [">=", 60.0]
+    },
+    "allow_no_match": false,
+    "description": "Verifies cold work high toughness punch grade ASP 2012."
+  },
+  {
+    "id": "case_08",
+    "query": "General purpose cutting tools and cold work, balanced wear and toughness, cobalt-free, at least 64 HRC.",
+    "expected_top_3": ["ASP 2023"],
+    "numeric_rules": {
+      "co_pct": ["==", 0.0],
+      "hardness_max": [">=", 64.0]
+    },
+    "allow_no_match": false,
+    "description": "Evaluates universal non-cobalt PM HSS workhorse grade ASP 2023."
+  },
+  {
+    "id": "case_09",
+    "query": "High-sulfur powder metallurgy grade with improved machinability for complex cold work tooling, at least 67 HRC.",
+    "expected_top_3": ["ASP 2078"],
+    "numeric_rules": {
+      "hardness_max": [">=", 67.0]
+    },
+    "allow_no_match": false,
+    "description": "Verifies sulfurized machinable grade ASP 2078 identification."
+  },
+  {
+    "id": "case_10",
+    "query": "Conventional HSS for bi-metal bandsaw teeth with 8% cobalt, at least 66 HRC.",
+    "expected_top_3": ["Evoloop M42", "ASP 2042"],
+    "numeric_rules": {
+      "co_pct": [">=", 7.5],
+      "hardness_max": [">=", 66.0]
+    },
+    "allow_no_match": false,
+    "description": "Evaluates conventional M42 vs PM M42 selection."
+  },
+  {
+    "id": "case_11",
+    "query": "High wear cold forming punches for glass-fiber filled plastics, high vanadium (>5% vanadium), zero cobalt.",
+    "expected_top_3": ["ASP 2053", "ASP 2011"],
+    "numeric_rules": {
+      "co_pct": ["==", 0.0],
+      "v_pct": [">=", 5.0]
+    },
+    "allow_no_match": false,
+    "description": "Evaluates high-vanadium cobalt-free grade ASP 2053."
+  },
+  {
+    "id": "case_12",
+    "query": "Heavy-duty gear hobbing broaches requiring high cobalt (>8% cobalt) and high tungsten, peak hardness at least 67 HRC.",
+    "expected_top_3": ["ASP 2048", "ASP 2060", "ASP 2030"],
+    "numeric_rules": {
+      "co_pct": [">=", 8.0],
+      "hardness_max": [">=", 67.0]
+    },
+    "allow_no_match": false,
+    "description": "Evaluates heavy-alloyed M48 PM equivalent grade."
+  },
+  {
+    "id": "case_13",
+    "query": "Maximum hot hardness and extreme wear resistance for cutting tools, 10% cobalt and 6% vanadium.",
+    "expected_top_3": ["ASP 2060", "ASP 2078"],
+    "numeric_rules": {
+      "co_pct": [">=", 10.0],
+      "v_pct": [">=", 6.0]
+    },
+    "allow_no_match": false,
+    "description": "Evaluates super-high alloyed ASP 2060 / ASP 2078 selection."
+  },
+  {
+    "id": "case_14",
+    "query": "Cold work stamping punches for high strength sheet metal, at least 8% cobalt and at least 67 HRC.",
+    "expected_top_3": ["ASP 2042", "ASP 2048", "ASP 2078"],
+    "numeric_rules": {
+      "co_pct": [">=", 8.0],
+      "hardness_max": [">=", 67.0]
+    },
+    "allow_no_match": false,
+    "description": "Evaluates cobalt-alloyed cold work stamping PM grades."
+  },
+  {
+    "id": "case_15",
+    "query": "Cutting tools broaching and end mills, at least 8% cobalt, at least 65 HRC.",
+    "expected_top_3": ["ASP 2030", "ASP 2042", "Evoloop M42", "ASP 2060"],
+    "numeric_rules": {
+      "co_pct": [">=", 8.0],
+      "hardness_max": [">=", 65.0]
+    },
+    "allow_no_match": false,
+    "description": "Evaluates standard 8% cobalt cutting tool grade ASP 2030."
+  },
+  {
+    "id": "case_16",
+    "query": "Impossible grade requirement: extreme alloy with > 35% cobalt and hardness > 75 HRC.",
+    "expected_top_3": [],
+    "numeric_rules": {
+      "co_pct": [">", 35.0]
+    },
+    "allow_no_match": true,
+    "description": "Tests zero-match behavior when cobalt exceeds physical metallurgy limits."
+  },
+  {
+    "id": "case_17",
+    "query": "Impossible grade requirement: zero cobalt steel with > 10% molybdenum and at least 67 HRC.",
+    "expected_top_3": [],
+    "numeric_rules": {
+      "co_pct": ["==", 0.0],
+      "mo_pct": [">", 10.0]
+    },
+    "allow_no_match": true,
+    "description": "Tests zero-match behavior when no cobalt-free grade has >10% Mo."
+  },
+  {
+    "id": "case_18",
+    "query": "Impossible grade requirement: tool steel with hardness > 75 HRC.",
+    "expected_top_3": [],
+    "numeric_rules": {
+      "hardness_max": [">", 75.0]
+    },
+    "allow_no_match": true,
+    "description": "Tests zero-match behavior for unachievable HRC hardness."
+  }
+]
