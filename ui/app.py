@@ -1,5 +1,6 @@
 """
-Grade Advisor: Modern White-Box Inspection Dashboard.
+Grade Advisor: Modern White-Box Inspection Dashboard (Production Build).
+
 Designed for engineering presentations, executive demonstrations, and technical audits.
 Exposes dual-stage retrieval internals:
 - DuckDB Deterministic Relational Filters (SQL)
@@ -10,6 +11,9 @@ Exposes dual-stage retrieval internals:
 import os
 import sys
 import json
+import html
+import logging
+
 import gradio as gr
 import pandas as pd
 
@@ -21,40 +25,46 @@ sys.path.insert(0, os.path.join(project_root, "src"))
 from agent import GradeAdvisorAgent
 from hybrid_search import execute_hybrid_search
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger("ui")
+
 DATA_PATH = os.path.join(project_root, "data", "extracted.json")
 
 agent = GradeAdvisorAgent()
 
+# Single source of truth for the ranking table schema (prevents empty-state mismatches)
+RANKING_COLUMNS = ["Rank", "Grade Name", "Cosine Distance", "Family", "Peak Hardness", "Cobalt %"]
 
-def load_catalog_df():
+
+def empty_ranking_df() -> pd.DataFrame:
+    return pd.DataFrame(columns=RANKING_COLUMNS)
+
+
+def load_catalog_df() -> pd.DataFrame:
     """Loads verified Erasteel catalog into a styled pandas DataFrame."""
+    cols = [
+        "name", "family", "c_pct", "cr_pct", "mo_pct", "w_pct",
+        "v_pct", "co_pct", "hardness_min", "hardness_max", "standards"
+    ]
+    renamed = {
+        "name": "Grade", "family": "Family", "c_pct": "C %", "cr_pct": "Cr %",
+        "mo_pct": "Mo %", "w_pct": "W %", "v_pct": "V %", "co_pct": "Co %",
+        "hardness_min": "HRC Min", "hardness_max": "HRC Max",
+        "standards": "Standards / Spec"
+    }
     if os.path.exists(DATA_PATH):
-        with open(DATA_PATH, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        df = pd.DataFrame(data)
-        cols = [
-            "name", "family", "c_pct", "cr_pct", "mo_pct", "w_pct",
-            "v_pct", "co_pct", "hardness_min", "hardness_max", "standards"
-        ]
-        renamed = {
-            "name": "Grade",
-            "family": "Family",
-            "c_pct": "C %",
-            "cr_pct": "Cr %",
-            "mo_pct": "Mo %",
-            "w_pct": "W %",
-            "v_pct": "V %",
-            "co_pct": "Co %",
-            "hardness_min": "HRC Min",
-            "hardness_max": "HRC Max",
-            "standards": "Standards / Spec"
-        }
-        return df[cols].rename(columns=renamed)
-    return pd.DataFrame()
+        try:
+            with open(DATA_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            df = pd.DataFrame(data)
+            return df[cols].rename(columns=renamed)
+        except Exception as e:
+            logger.error(f"Failed to load catalog: {e}")
+    return pd.DataFrame(columns=[renamed[c] for c in cols])
 
 
-def render_property_bar(name: str, score: float, color: str = "#3b82f6") -> str:
-    """Renders an interactive animated property progress bar."""
+def render_property_bar(name: str, score: float, color: str = "#0055a4") -> str:
+    """Renders an animated property progress bar."""
     pct = min(max(score * 10, 0), 100)
     return f"""
     <div style="margin-bottom: 8px;">
@@ -63,10 +73,39 @@ def render_property_bar(name: str, score: float, color: str = "#3b82f6") -> str:
             <span style="color: {color};">{score:.1f} / 10</span>
         </div>
         <div style="background: #e2e8f0; border-radius: 999px; height: 7px; overflow: hidden; width: 100%;">
-            <div style="background: {color}; width: {pct}%; height: 100%; border-radius: 999px;"></div>
+            <div style="background: {color}; width: {pct}%; height: 100%; border-radius: 999px; transition: width 0.6s ease;"></div>
         </div>
     </div>
     """
+
+
+def render_empty_state() -> str:
+    return """
+    <div style="text-align: center; padding: 48px 24px; color: #94a3b8; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 12px;">
+        <div style="font-size: 2.5rem; margin-bottom: 8px;">⚙️</div>
+        <div style="font-size: 1.1rem; font-weight: 600; color: #475569;">Ready for Demonstration</div>
+        <div style="font-size: 0.85rem;">Select a showcase scenario on the left or type your own tooling query.</div>
+    </div>
+    """
+
+
+def render_error_state(message: str) -> str:
+    safe_msg = html.escape(message)
+    return f"""
+    <div style="background: #fff7ed; border: 1.5px solid #fdba74; border-radius: 12px; padding: 24px; color: #9a3412;">
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 10px;">
+            <span style="font-size: 1.8rem;">⚠️</span>
+            <div>
+                <h3 style="margin: 0; font-size: 1.2rem; font-weight: 700;">Processing Error</h3>
+                <p style="margin: 2px 0 0 0; font-size: 0.85rem;">The query could not be completed. Please try again.</p>
+            </div>
+        </div>
+        <div style="background: #ffffff; border: 1px solid #fed7aa; border-radius: 6px; padding: 10px 14px; font-family: monospace; font-size: 0.85rem; color: #c2410c;">
+            {safe_msg}
+        </div>
+    </div>
+    """
+
 
 
 def format_html_recommendation(res: dict) -> str:
@@ -74,14 +113,14 @@ def format_html_recommendation(res: dict) -> str:
     matches = res.get("matches", [])
     if not matches:
         conds = res.get("sql_conditions", [])
-        cond_str = " AND ".join(conds) if conds else "the specified constraints"
+        cond_str = html.escape(" AND ".join(conds)) if conds else "the specified constraints"
         return f"""
         <div style="background: #fff1f2; border: 1.5px solid #fda4af; border-radius: 12px; padding: 24px; color: #9f1239; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
             <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
                 <span style="font-size: 1.8rem;">🚫</span>
                 <div>
                     <h3 style="margin: 0; font-size: 1.25rem; font-weight: 700; color: #9f1239;">Zero Matching Catalog Grades</h3>
-                    <p style="margin: 2px 0 0 0; font-size: 0.88rem; color: #be123c;">Physical & Chemical Boundary Rejection</p>
+                    <p style="margin: 2px 0 0 0; font-size: 0.88rem; color: #be123c;">Physical &amp; Chemical Boundary Rejection</p>
                 </div>
             </div>
             <p style="font-size: 0.95rem; line-height: 1.5; color: #881337; margin-bottom: 12px;">
@@ -98,12 +137,11 @@ def format_html_recommendation(res: dict) -> str:
 
     top = matches[0]
     data = top.get("data", {})
-    name = data.get("name", "Unknown Grade")
-    family = data.get("family", "Unknown Family")
+    name = html.escape(str(data.get("name", "Unknown Grade")))
+    family = str(data.get("family", "Unknown Family"))
     dist = top.get("distance", 0.0)
     sim_score = max(0, 100 - (dist * 50))  # normalized visual match index
 
-    # Elemental percentages
     c = data.get("c_pct", 0.0)
     cr = data.get("cr_pct", 0.0)
     mo = data.get("mo_pct", 0.0)
@@ -112,21 +150,16 @@ def format_html_recommendation(res: dict) -> str:
     co = data.get("co_pct", 0.0)
     h_min = data.get("hardness_min", 0.0)
     h_max = data.get("hardness_max", 0.0)
-    standards = data.get("standards", "Erasteel Proprietary Spec")
+    standards = html.escape(str(data.get("standards", "Erasteel Proprietary Spec")))
 
-    # Family badge styling
-    fam_color = "#2563eb"
-    if family == "Cold work":
-        fam_color = "#059669"
-    elif family == "Specialties":
-        fam_color = "#7c3aed"
+    fam_color = {"Cold work": "#059669", "Specialties": "#7c3aed"}.get(family, "#0055a4")
 
     # Secondary candidates
     alt_html = ""
     if len(matches) > 1:
         alt_badges = []
         for alt in matches[1:]:
-            alt_name = alt.get("name", "")
+            alt_name = html.escape(str(alt.get("name", "")))
             alt_dist = alt.get("distance", 0.0)
             alt_badges.append(
                 f'<span style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px 10px; font-size: 0.82rem; font-weight: 600; color: #334155;">'
@@ -143,15 +176,41 @@ def format_html_recommendation(res: dict) -> str:
         </div>
         """
 
-    card_html = f"""
-    <div style="background: #ffffff; border: 1.5px solid #cbd5e1; border-radius: 14px; padding: 24px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.05), 0 4px 6px -2px rgba(0,0,0,0.025); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+    # Property bars
+    props = [
+        ("Machinability", data.get("machinability", 0.0), "#0055a4"),
+        ("Wear Resistance", data.get("wear_resistance", 0.0), "#0891b2"),
+        ("Toughness", data.get("toughness", 0.0), "#059669"),
+        ("Hot Hardness", data.get("hot_hardness", 0.0), "#d97706"),
+        ("Grindability", data.get("grindability", 0.0), "#7c3aed"),
+    ]
+    bars_html = "".join(render_property_bar(n, float(s or 0.0), col) for n, s, col in props)
+
+    description = html.escape(str(data.get("description", ""))).replace("\n", "<br>")
+    applications = html.escape(str(data.get("applications", ""))).replace("\n", "<br>")
+    heat_treatment = html.escape(str(data.get("heat_treatment", ""))).replace("\n", "<br>")
+
+    def chem_cell(label, val):
+        return f"""
+        <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 2px;">
+            <div style="font-size: 0.7rem; color: #64748b; font-weight: 600;">{label}</div>
+            <div style="font-size: 0.95rem; font-weight: 800; color: #0f172a;">{val}%</div>
+        </div>"""
+
+    chem_html = (
+        chem_cell("Carbon", c) + chem_cell("Chromium", cr) + chem_cell("Moly", mo)
+        + chem_cell("Tungsten", w) + chem_cell("Vanadium", v) + chem_cell("Cobalt", co)
+    )
+
+    return f"""
+    <div style="background: #ffffff; border: 1.5px solid #cbd5e1; border-radius: 14px; padding: 24px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.05), 0 4px 6px -2px rgba(0,0,0,0.025);">
         <!-- Header Banner -->
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
             <div>
-                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 4px;">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 4px; flex-wrap: wrap;">
                     <h2 style="margin: 0; font-size: 1.7rem; font-weight: 800; color: #0f172a; letter-spacing: -0.02em;">{name}</h2>
                     <span style="background: {fam_color}18; color: {fam_color}; border: 1px solid {fam_color}40; border-radius: 999px; padding: 3px 12px; font-size: 0.78rem; font-weight: 700; text-transform: uppercase;">
-                        {family}
+                        {html.escape(family)}
                     </span>
                     <span style="background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; border-radius: 999px; padding: 3px 10px; font-size: 0.78rem; font-weight: 600;">
                         {standards}
@@ -163,119 +222,75 @@ def format_html_recommendation(res: dict) -> str:
             </div>
             <div style="text-align: right; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 6px 12px;">
                 <div style="font-size: 0.7rem; text-transform: uppercase; color: #64748b; font-weight: 700;">Vector Proximity</div>
-                <div style="font-size: 1.1rem; font-weight: 800; color: #0284c7;">{sim_score:.0f}% <span style="font-size: 0.75rem; color: #64748b; font-weight: 400;">(d={dist:.3f})</span></div>
+                <div style="font-size: 1.1rem; font-weight: 800; color: #0055a4;">{sim_score:.0f}% <span style="font-size: 0.75rem; color: #64748b; font-weight: 400;">(d={dist:.3f})</span></div>
             </div>
         </div>
 
-        <!-- Chemistry & Hardness Pills -->
+        <!-- Chemistry & Hardness -->
         <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; margin-bottom: 18px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
                 <span style="font-size: 0.75rem; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.05em;">Nominal Chemical Composition (wt. %)</span>
-                <span style="font-size: 0.78rem; font-weight: 700; color: #0f172a; background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 6px;">
-                    Hardness: {h_min:.0f} - {h_max:.0f} HRC (Peak: {h_max:.0f} HRC)
+                <span style="font-size: 0.78rem; font-weight: 700; background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 6px;">
+                    Hardness: {h_min:.0f} – {h_max:.0f} HRC (Peak: {h_max:.0f} HRC)
                 </span>
             </div>
             <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; text-align: center;">
-                <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 2px;">
-                    <div style="font-size: 0.7rem; color: #64748b; font-weight: 600;">Carbon</div>
-                    <div style="font-size: 0.95rem; font-weight: 800; color: #0f172a;">{c}%</div>
-                </div>
-                <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 2px;">
-                    <div style="font-size: 0.7rem; color: #64748b; font-weight: 600;">Chromium</div>
-                    <div style="font-size: 0.95rem; font-weight: 800; color: #0f172a;">{cr}%</div>
-                </div>
-                <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 2px;">
-                    <div style="font-size: 0.7rem; color: #64748b; font-weight: 600;">Moly</div>
-                    <div style="font-size: 0.95rem; font-weight: 800; color: #0f172a;">{mo}%</div>
-                </div>
-                <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 2px;">
-                    <div style="font-size: 0.7rem; color: #64748b; font-weight: 600;">Tungsten</div>
-                    <div style="font-size: 0.95rem; font-weight: 800; color: #0f172a;">{w}%</div>
-                </div>
-                <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 2px;">
-                    <div style="font-size: 0.7rem; color: #64748b; font-weight: 600;">Vanadium</div>
-                    <div style="font-size: 0.95rem; font-weight: 800; color: #0f172a;">{v}%</div>
-                </div>
-                <div style="background: #ffffff; border: 1.5px solid {'#f59e0b' if co > 0 else '#cbd5e1'}; border-radius: 6px; padding: 6px 2px; {'background: #fffbeb;' if co > 0 else ''}">
-                    <div style="font-size: 0.7rem; color: {'#b45309' if co > 0 else '#64748b'}; font-weight: 700;">Cobalt</div>
-                    <div style="font-size: 0.95rem; font-weight: 800; color: {'#b45309' if co > 0 else '#0f172a'};">{co}%</div>
-                </div>
+                {chem_html}
             </div>
         </div>
 
-        <!-- 2-Column: Properties & Metallurgical Rationale -->
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 16px;">
-            <!-- Property Score Bars -->
-            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px;">
-                <div style="font-size: 0.75rem; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px;">
-                    Property Ratings (1 - 10 Scale)
-                </div>
-                {render_property_bar("Toughness / Shock Resistance", data.get("toughness", 5.0), "#059669")}
-                {render_property_bar("Wear Resistance", data.get("wear_resistance", 5.0), "#2563eb")}
-                {render_property_bar("Hot Hardness / Red Hardness", data.get("hot_hardness", 5.0), "#d97706")}
-                {render_property_bar("Machinability", data.get("machinability", 5.0), "#64748b")}
-                {render_property_bar("Grindability", data.get("grindability", 5.0), "#6366f1")}
+        <!-- Engineering Property Ratings -->
+        <div style="margin-bottom: 18px;">
+            <div style="font-size: 0.75rem; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">
+                Engineering Property Ratings
             </div>
-
-            <!-- Engineering Rationale -->
-            <div style="display: flex; flex-direction: column; gap: 10px;">
-                <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 12px;">
-                    <div style="font-size: 0.75rem; font-weight: 700; color: #166534; text-transform: uppercase; margin-bottom: 4px;">
-                        🔬 Metallurgical Rationale
-                    </div>
-                    <div style="font-size: 0.85rem; color: #14532d; line-height: 1.45;">
-                        {data.get("description", "")}
-                    </div>
-                </div>
-
-                <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 12px;">
-                    <div style="font-size: 0.75rem; font-weight: 700; color: #1e40af; text-transform: uppercase; margin-bottom: 4px;">
-                        🎯 Target Applications
-                    </div>
-                    <div style="font-size: 0.85rem; color: #1e3a8a; line-height: 1.45;">
-                        {data.get("applications", "")}
-                    </div>
-                </div>
-            </div>
+            {bars_html}
         </div>
 
-        <!-- Heat Treatment Callout -->
-        <div style="background: #fdf4ff; border: 1px solid #f5d0fe; border-radius: 8px; padding: 10px 14px; font-size: 0.84rem; color: #701a75;">
-            <strong>🔥 Heat Treatment Protocol:</strong> {data.get("heat_treatment", "Refer to Erasteel datasheet.")}
+        <!-- Metallurgical Detail -->
+        <div style="font-size: 0.88rem; line-height: 1.6; color: #334155;">
+            <div style="margin-bottom: 10px;"><strong style="color: #0f172a;">Metallurgical Rationale:</strong><br>{description}</div>
+            <div style="margin-bottom: 10px;"><strong style="color: #0f172a;">Recommended Applications:</strong><br>{applications}</div>
+            <div><strong style="color: #0f172a;">Heat Treatment:</strong><br>{heat_treatment}</div>
         </div>
-
         {alt_html}
     </div>
     """
-    return card_html
 
 
+
+# --------------------------------------------------------------------------- #
+# Query Pipeline
+# --------------------------------------------------------------------------- #
 def process_query(user_query: str):
-    """Executes agent workflow and formats high-impact visual outputs."""
+    """Runs the agent and renders all white-box outputs. Never raises."""
     if not user_query or not user_query.strip():
-        empty_html = """
-        <div style="text-align: center; padding: 40px; color: #94a3b8;">
-            <div style="font-size: 2.5rem; margin-bottom: 8px;">⚙️</div>
-            <div style="font-size: 1.1rem; font-weight: 600;">Ready for Query Submission</div>
-            <div style="font-size: 0.88rem;">Select a showcase demo scenario below or enter your custom tooling query.</div>
-        </div>
-        """
         return (
-            empty_html,
+            render_empty_state(),
             "-- Awaiting query submission...",
             "N/A",
-            pd.DataFrame(columns=["Rank", "Grade", "Distance", "Family"]),
+            empty_ranking_df(),
             "{}"
         )
 
-    res = agent.run(user_query.strip())
+    try:
+        res = agent.run(user_query.strip())
+    except Exception as e:
+        logger.exception("Agent run failed")
+        return (
+            render_error_state(str(e)),
+            "-- Error: query did not execute --",
+            "N/A",
+            empty_ranking_df(),
+            "{}"
+        )
 
     # 1. HTML Recommendation Card
     card_html = format_html_recommendation(res)
 
     # 2. SQL Details
     sql_clauses = res.get("sql_conditions", [])
-    sql_text = f"-- Step 1: DuckDB Relational Gatekeeper Execution\n"
+    sql_text = "-- Step 1: DuckDB Relational Gatekeeper Execution\n"
     if sql_clauses:
         sql_text += "SELECT name, family, c_pct, cr_pct, mo_pct, w_pct, v_pct, co_pct, hardness_min, hardness_max\nFROM steel_grades\n"
         sql_text += "\n".join([f"  AND {c}" if i > 0 else f"WHERE {c}" for i, c in enumerate(sql_clauses)])
@@ -287,40 +302,49 @@ def process_query(user_query: str):
     sql_text += f"-- {', '.join(matched_names) if matched_names else 'ZERO candidates matched (Constraint Violated)'}"
 
     # 3. Semantic Query
-    sem_text = res.get("semantic_query", "N/A")
+    sem_text = res.get("semantic_query", "N/A") or "N/A"
 
     # 4. ChromaDB Ranking Table
-    matches = res.get("matches", [])
     rank_rows = []
-    for idx, m in enumerate(matches, 1):
+    for idx, m in enumerate(res.get("matches", []), 1):
         gdata = m.get("data", {})
         dist = m.get("distance", 0.0)
         rank_rows.append({
             "Rank": f"#{idx}",
-            "Grade Name": m["name"],
+            "Grade Name": m.get("name", "N/A"),
             "Cosine Distance": f"{dist:.4f}",
             "Family": gdata.get("family", "N/A"),
             "Peak Hardness": f"{gdata.get('hardness_max', 0.0):.0f} HRC",
             "Cobalt %": f"{gdata.get('co_pct', 0.0)}%"
         })
-    rank_df = pd.DataFrame(rank_rows) if rank_rows else pd.DataFrame(
-        columns=["Rank", "Grade Name", "Cosine Distance", "Family", "Peak Hardness", "Cobalt %"]
-    )
+    rank_df = pd.DataFrame(rank_rows, columns=RANKING_COLUMNS) if rank_rows else empty_ranking_df()
 
-    # 5. Raw JSON Snippet
-    raw_json_str = json.dumps([m.get("data", {}) for m in matches], indent=2, ensure_ascii=False)
+    # 5. Raw JSON Payload
+    raw_json_str = json.dumps([m.get("data", {}) for m in res.get("matches", [])], indent=2, ensure_ascii=False)
 
     return card_html, sql_text, sem_text, rank_df, raw_json_str
 
 
-# Custom CSS for crisp presentation
+def reset_outputs():
+    return (
+        render_empty_state(),
+        "-- Awaiting query submission...",
+        "N/A",
+        empty_ranking_df(),
+        "{}"
+    )
+
+
+
+# --------------------------------------------------------------------------- #
+# Custom CSS (must live in gr.Blocks(css=...), NOT in launch())
+# --------------------------------------------------------------------------- #
 custom_css = """
-/* Reset & Clean font */
 body, .gradio-container {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
 }
 .header-container {
-    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    background: linear-gradient(135deg, #0b1f3a 0%, #0055a4 100%);
     border-radius: 12px;
     padding: 24px 30px;
     color: #ffffff;
@@ -338,7 +362,7 @@ body, .gradio-container {
 }
 .header-subtitle {
     font-size: 0.95rem;
-    color: #94a3b8;
+    color: #cbd5e1;
     margin-top: 6px;
     margin-bottom: 12px;
 }
@@ -359,19 +383,43 @@ body, .gradio-container {
 .demo-btn-row button {
     font-size: 0.85rem !important;
     padding: 6px 12px !important;
+    width: 100%;
+    text-align: left !important;
+    transition: transform 0.1s ease, box-shadow 0.2s ease;
 }
-.section-header {
-    font-size: 1.05rem;
-    font-weight: 700;
-    color: #1e293b;
-    margin-bottom: 10px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
+.demo-btn-row button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px -2px rgba(0, 85, 164, 0.3);
+}
+.footer-note {
+    text-align: center;
+    font-size: 0.8rem;
+    color: #94a3b8;
+    padding: 18px 0 6px 0;
+    border-top: 1px solid #e2e8f0;
+    margin-top: 24px;
 }
 """
 
-with gr.Blocks(title="Grade Advisor: Dual-Stage Hybrid RAG") as demo:
+# Consistent Gradio theme aligned with the Erasteel blue brand
+theme = gr.themes.Soft(
+    primary_hue=gr.themes.colors.blue,
+    neutral_hue=gr.themes.colors.slate,
+    font=[gr.themes.GoogleFont("Inter"), "system-ui", "sans-serif"],
+)
+
+
+
+# --------------------------------------------------------------------------- #
+# Layout
+# --------------------------------------------------------------------------- #
+# Gradio 6+ moved `theme` and `css` from the Blocks constructor to launch().
+_GRADIO_MAJOR = int(gr.__version__.split(".")[0])
+_BLOCKS_KWARGS = {"title": "Grade Advisor: Dual-Stage Hybrid RAG"}
+if _GRADIO_MAJOR < 6:
+    _BLOCKS_KWARGS.update({"theme": theme, "css": custom_css})
+
+with gr.Blocks(**_BLOCKS_KWARGS) as demo:
     # Top Executive Banner
     gr.HTML(
         """
@@ -407,37 +455,29 @@ with gr.Blocks(title="Grade Advisor: Dual-Stage Hybrid RAG") as demo:
                 submit_btn = gr.Button("⚡ Run Dual-Stage Selection", variant="primary", scale=2)
                 clear_btn = gr.Button("Clear", scale=1)
 
-            gr.Markdown("#### 🎬 Showcase Demo Scenarios (Click to Run)")
-            gr.Markdown("*Pre-configured queries demonstrating specific architectural capabilities:*")
-            
-            with gr.Column(elem_classes="demo-btn-row"):
-                scenario_a = gr.Button("🔴 Scenario 1: Cold Work Shock Punch (Zero Cobalt, Toughness)", size="sm")
-                scenario_b = gr.Button("🔵 Scenario 2: Dry High-Speed Gear Skiving (29% Co, Hot Hardness)", size="sm")
-                scenario_c = gr.Button("🟢 Scenario 3: Corrosive Plastic Tooling (Stainless PM APZ10)", size="sm")
-                scenario_d = gr.Button("🟣 Scenario 4: Threading Machine Taps (Grindability & Toughness)", size="sm")
-                scenario_e = gr.Button("⚠️ Scenario 5: Boundary Failure Stress Test (>35% Co, >75 HRC)", size="sm")
+            with gr.Accordion("🎬 Showcase Demo Scenarios (Click to Run)", open=True):
+                gr.Markdown("*Pre-configured queries demonstrating specific architectural capabilities:*")
+                with gr.Column(elem_classes="demo-btn-row"):
+                    scenario_a = gr.Button("🔴 Scenario 1: Cold Work Shock Punch (Zero Cobalt, Toughness)", size="sm")
+                    scenario_b = gr.Button("🔵 Scenario 2: Dry High-Speed Gear Skiving (29% Co, Hot Hardness)", size="sm")
+                    scenario_c = gr.Button("🟢 Scenario 3: Corrosive Plastic Tooling (Stainless PM APZ10)", size="sm")
+                    scenario_d = gr.Button("🟣 Scenario 4: Threading Machine Taps (Grindability & Toughness)", size="sm")
+                    scenario_e = gr.Button("⚠️ Scenario 5: Boundary Failure Stress Test (>35% Co, >75 HRC)", size="sm")
 
         # Right Output Panel (Rich Presentation Card)
         with gr.Column(scale=6):
             gr.Markdown("### 📋 Primary Recommendation & Physical Profile")
-            rec_html_output = gr.HTML(
-                value="""
-                <div style="text-align: center; padding: 40px; color: #94a3b8; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 12px;">
-                    <div style="font-size: 2.5rem; margin-bottom: 8px;">⚙️</div>
-                    <div style="font-size: 1.1rem; font-weight: 600; color: #475569;">Ready for Demonstration</div>
-                    <div style="font-size: 0.85rem;">Click one of the showcase scenario buttons on the left or type your own query.</div>
-                </div>
-                """
-            )
+            rec_html_output = gr.HTML(value=render_empty_state())
 
     gr.Markdown("---")
+
 
     # Lower Section: White-Box Inspection Audit Trail
     gr.Markdown("### 🔬 White-Box Retrieval Internals (Audit Trail)")
     gr.Markdown("*Proves this is an engineering-grade hybrid retrieval system, not a black-box chatbot wrapper.*")
 
     with gr.Tabs():
-        with gr.TabItem("🗄️ Step 1: DuckDB SQL Gatekeeper"):
+        with gr.TabItem("🗂️ Step 1: DuckDB SQL Gatekeeper"):
             sql_output = gr.Code(
                 label="Executed SQL Query & Surviving Candidate Pool",
                 language="sql",
@@ -453,7 +493,7 @@ with gr.Blocks(title="Grade Advisor: Dual-Stage Hybrid RAG") as demo:
                 with gr.Column(scale=3):
                     ranking_output = gr.Dataframe(
                         label="ChromaDB Ranked Candidates ($in metadata filter applied)",
-                        headers=["Rank", "Grade Name", "Cosine Distance", "Family", "Peak Hardness", "Cobalt %"]
+                        headers=RANKING_COLUMNS
                     )
         with gr.TabItem("📦 Step 3: Raw Database JSON Payloads"):
             json_output = gr.Code(
@@ -462,14 +502,25 @@ with gr.Blocks(title="Grade Advisor: Dual-Stage Hybrid RAG") as demo:
                 lines=12
             )
         with gr.TabItem("📚 Erasteel Catalog Explorer (13 Verified Grades)"):
-            catalog_df = load_catalog_df()
             gr.Dataframe(
-                catalog_df,
+                value=load_catalog_df(),
                 label="Full Ingested Erasteel Datasheet Catalog",
                 interactive=False
             )
 
-    # Event Wiring: Manual Submit & Clear
+    gr.HTML(
+        """
+        <div class="footer-note">
+            Grade Advisor · Hybrid RAG (DuckDB + ChromaDB + Gemini) · Built on authentic Erasteel ASP® technical datasheets ·
+            Always verify against official Erasteel datasheets before production tooling decisions.
+        </div>
+        """
+    )
+
+
+    # ------------------------------------------------------------------ #
+    # Event Wiring
+    # ------------------------------------------------------------------ #
     submit_btn.click(
         fn=process_query,
         inputs=[query_input],
@@ -481,48 +532,36 @@ with gr.Blocks(title="Grade Advisor: Dual-Stage Hybrid RAG") as demo:
         outputs=[rec_html_output, sql_output, semantic_output, ranking_output, json_output]
     )
     clear_btn.click(
-        fn=lambda: (
-            """
-            <div style="text-align: center; padding: 40px; color: #94a3b8; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 12px;">
-                <div style="font-size: 2.5rem; margin-bottom: 8px;">⚙️</div>
-                <div style="font-size: 1.1rem; font-weight: 600; color: #475569;">Ready for Demonstration</div>
-                <div style="font-size: 0.85rem;">Click one of the showcase scenario buttons on the left or type your own query.</div>
-            </div>
-            """,
-            "-- Awaiting query submission...",
-            "N/A",
-            pd.DataFrame(columns=["Rank", "Grade Name", "Cosine Distance", "Family", "Peak Hardness", "Cobalt %"]),
-            "{}"
-        ),
+        fn=reset_outputs,
+        inputs=None,
         outputs=[rec_html_output, sql_output, semantic_output, ranking_output, json_output]
-    )
+    ).then(fn=lambda: "", outputs=[query_input])
 
-    # Event Wiring: Showcase Demo Scenario Quick-Buttons
     def set_and_run(query: str):
         card, sql, sem, rank, jsn = process_query(query)
         return query, card, sql, sem, rank, jsn
 
-    scenario_a.click(
-        fn=lambda: set_and_run("Cold work tooling, max toughness, HRC around 60, zero cobalt."),
-        outputs=[query_input, rec_html_output, sql_output, semantic_output, ranking_output, json_output]
-    )
-    scenario_b.click(
-        fn=lambda: set_and_run("Dry high-speed gear skiving requiring extreme hot hardness and ultra-high cobalt (>20% cobalt)."),
-        outputs=[query_input, rec_html_output, sql_output, semantic_output, ranking_output, json_output]
-    )
-    scenario_c.click(
-        fn=lambda: set_and_run("Plastic injection molds in corrosive environment, stainless high chromium PM tool steel."),
-        outputs=[query_input, rec_html_output, sql_output, semantic_output, ranking_output, json_output]
-    )
-    scenario_d.click(
-        fn=lambda: set_and_run("Dedicated steel for manufacturing machine taps, balanced grindability and toughness."),
-        outputs=[query_input, rec_html_output, sql_output, semantic_output, ranking_output, json_output]
-    )
-    scenario_e.click(
-        fn=lambda: set_and_run("Impossible constraint: tool steel with > 35% cobalt and hardness > 75 HRC."),
-        outputs=[query_input, rec_html_output, sql_output, semantic_output, ranking_output, json_output]
-    )
+    ALL_OUTPUTS = [query_input, rec_html_output, sql_output, semantic_output, ranking_output, json_output]
+    for btn, query in [
+        (scenario_a, "Cold work tooling, max toughness, HRC around 60, zero cobalt."),
+        (scenario_b, "Dry high-speed gear skiving requiring extreme hot hardness and ultra-high cobalt (>20% cobalt)."),
+        (scenario_c, "Plastic injection molds in corrosive environment, stainless high chromium PM tool steel."),
+        (scenario_d, "Dedicated steel for manufacturing machine taps, balanced grindability and toughness."),
+        (scenario_e, "Impossible constraint: tool steel with > 35% cobalt and hardness > 75 HRC."),
+    ]:
+        btn.click(fn=lambda q=query: set_and_run(q), outputs=ALL_OUTPUTS)
 
 
 if __name__ == "__main__":
-    demo.launch(server_name="127.0.0.1", server_port=7860, share=False, css=custom_css)
+    demo.queue(max_size=20, default_concurrency_limit=1)
+    launch_kwargs = {
+        "server_name": "127.0.0.1",
+        "server_port": 7860,
+        "share": False,
+        "show_error": True,
+    }
+    if _GRADIO_MAJOR >= 6:
+        # Gradio 6+: theme & css are passed at launch time
+        launch_kwargs.update({"theme": theme, "css": custom_css})
+    demo.launch(**launch_kwargs)
+

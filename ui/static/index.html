@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Grade Advisor — Erasteel HSS Selection</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-mark">GA</div>
+    <div class="brand-text">
+      <div class="brand-name">GRADE ADVISOR</div>
+      <div class="brand-sub">Erasteel HSS / ASP&reg; grade selection &middot; hybrid retrieval engine</div>
+    </div>
+  </div>
+  <div class="topbar-meta">
+    <div class="status-chip" id="status-chip"><span class="dot"></span><span id="status-text">ROUTER: —</span></div>
+  </div>
+</header>
+
+<main class="workbench">
+
+  <!-- LEFT: Query console -->
+  <section class="panel query-panel">
+    <div class="panel-head"><span class="panel-label">Query Console</span><span class="panel-index">01</span></div>
+    <textarea id="query-input" rows="4" spellcheck="false"
+      placeholder="State the tooling intent and hard constraints — e.g. cold work punching, HRC 60, zero cobalt"></textarea>
+    <div class="actions">
+      <button id="run-btn" class="btn-primary">Run Retrieval</button>
+      <button id="clear-btn" class="btn-ghost">Reset</button>
+    </div>
+
+    <div class="panel-head sub"><span class="panel-label">Benchmark Scenarios</span><span class="panel-index">02</span></div>
+    <div class="scenario-list" id="scenario-list"></div>
+  </section>
+
+  <!-- RIGHT: Recommendation datasheet -->
+  <section class="panel result-panel">
+    <div class="panel-head"><span class="panel-label">Primary Recommendation</span><span class="panel-index">03</span></div>
+    <div id="result-body">
+      <div class="empty-state" id="empty-state">
+        <div class="empty-rule"></div>
+        <p>NO ACTIVE QUERY</p>
+        <p class="small">Awaiting input — select a scenario or compose a query.</p>
+        <div class="empty-rule"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- Audit trail -->
+<section class="panel audit-panel">
+  <div class="audit-head">
+    <span class="panel-label">Retrieval Internals — Audit Trail</span>
+    <nav class="tabs" id="tabs">
+      <button data-tab="sql" class="tab active">SQL Gatekeeper</button>
+      <button data-tab="vector" class="tab">Vector Ranking</button>
+      <button data-tab="payloads" class="tab">Raw Payloads</button>
+      <button data-tab="catalog" class="tab">Catalog</button>
+    </nav>
+  </div>
+  <div class="tab-body">
+    <div class="tab-pane active" id="pane-sql">
+      <div class="terminal" id="sql-terminal">-- Awaiting query submission...</div>
+    </div>
+    <div class="tab-pane" id="pane-vector">
+      <div class="vector-grid">
+        <div>
+          <div class="micro-label">Extracted Semantic Vector</div>
+          <div class="terminal" id="semantic-terminal">N/A</div>
+        </div>
+        <div>
+          <div class="micro-label">ChromaDB Ranked Candidates ($in pre-filter)</div>
+          <table class="data-table" id="ranking-table">
+            <thead><tr><th>Rank</th><th>Grade</th><th>Distance</th><th>Family</th><th>Peak HRC</th><th>Co %</th></tr></thead>
+            <tbody><tr class="placeholder-row"><td colspan="6">—</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="tab-pane" id="pane-payloads">
+      <div class="terminal" id="json-terminal">{}</div>
+    </div>
+    <div class="tab-pane" id="pane-catalog">
+      <div class="table-scroll">
+        <table class="data-table" id="catalog-table">
+          <thead><tr>
+            <th>Grade</th><th>Family</th><th>C</th><th>Cr</th><th>Mo</th><th>W</th><th>V</th><th>Co</th><th>HRC min</th><th>HRC max</th><th>Standards</th>
+          </tr></thead>
+          <tbody><tr class="placeholder-row"><td colspan="11">Loading catalog…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="foot">
+  <span>GRADE ADVISOR</span><span class="sep">/</span>
+  <span>Hybrid RAG: DuckDB + ChromaDB + Gemini</span><span class="sep">/</span>
+  <span>Verify all output against official Erasteel datasheets before production decisions</span>
+</footer>
+
+<script src="/app.js"></script>
+</body>
+</html>

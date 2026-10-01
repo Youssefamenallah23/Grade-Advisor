@@ -11,6 +11,10 @@ An engineering-grade **Hybrid Retrieval-Augmented Generation (SQL + Vector RAG)*
 
 Grade Advisor bridges the gap between **uncompromising metallurgical constraints** (exact chemical compositions, working hardness ranges) and **nuanced qualitative intent** (tool geometries, wear modes, machining conditions).
 
+![Grade Advisor UI — hybrid retrieval dashboard](docs/ui-overview.png)
+
+*The Grade Advisor dashboard: query console with benchmark scenarios (left), live recommendation datasheet with chemistry, hardness window and property ratings (right), and the white-box retrieval audit trail with the full verified Erasteel catalog (bottom).*
+
 ---
 
 ## 📑 Table of Contents
@@ -22,7 +26,7 @@ Grade Advisor bridges the gap between **uncompromising metallurgical constraints
    - [3. Why ChromaDB with `$in` Metadata Pre-Filtering?](#3-why-chromadb-with-in-metadata-pre-filtering)
    - [4. Why Gemini 3.5 Flash-Lite as the Agent Router?](#4-why-gemini-35-flash-lite-as-the-agent-router)
    - [5. Why Deterministic Fallback & Rate Limiting?](#5-why-deterministic-fallback--rate-limiting)
-   - [6. Why a White-Box Inspection UI in Gradio?](#6-why-a-white-box-inspection-ui-in-gradio)
+   - [6. Why a Custom White-Box Inspection UI (FastAPI + Hand-Built Frontend)?](#6-why-a-custom-white-box-inspection-ui-fastapi--hand-built-frontend)
 3. [System Architecture Flow](#-system-architecture-flow)
 4. [Phase-by-Phase Implementation Anatomy](#-phase-by-phase-implementation-anatomy)
    - [Phase 1: Multimodal PDF Extraction & Physics Validation](#phase-1-multimodal-pdf-extraction--physics-validation)
@@ -146,14 +150,16 @@ The Grade Advisor architecture was engineered from first principles to resolve t
 * **Free-Tier Sustainability:** Public API free quotas are subject to 10–15 Requests Per Minute (RPM). `src/rate_limit.py` enforces sliding-window request pacing (`min_interval = 4.0s`) and exponential backoff with jitter on HTTP 429 errors.
 * **Zero-Downtime Dual-Mode Execution:** If the Gemini API key is missing or quota is exhausted, `src/agent.py` automatically falls back to an internal **Deterministic Regex/AST Intent Router**. This guarantees that the evaluation suite and web frontend remain fully functional offline.
 
-### 6. Why a White-Box Inspection UI in Gradio?
+### 6. Why a Custom White-Box Inspection UI (FastAPI + Hand-Built Frontend)?
 * Standard chatbot interfaces hide intermediate steps, making auditability impossible.
-* The Gradio interface (`ui/app.py`) exposes:
+* The interface (`ui/server.py` + `ui/static/`) is a purpose-built **industrial datasheet** dashboard — paper-light, hairline-ruled, monospaced data — rather than a generic chat skin, and it exposes:
   1. The extracted DuckDB SQL conditions and candidate count.
   2. The ChromaDB semantic query vector string.
   3. The surviving candidate cosine distance ranking table.
   4. The raw database JSON payload retrieved from disk.
   5. The final synthesized metallurgical answer with standard citations.
+* The retrieval engine is served as a small JSON API (`/api/query`, `/api/catalog`, `/api/health`), so the UI layer is swappable and the agent can be integrated into other internal tools.
+* A self-contained Gradio build (`ui/app.py`) is retained for quick internal demos.
 
 ---
 
@@ -165,7 +171,7 @@ The end-to-end lifecycle of a query unfolds across four distinct stages:
 sequenceDiagram
     autonumber
     actor User
-    participant UI as Gradio Frontend (ui/app.py)
+    participant UI as Web Frontend (ui/static + ui/server.py)
     participant Agent as Agent Router (src/agent.py)
     participant DuckDB as DuckDB Relational DB (grades.db)
     participant Chroma as ChromaDB Vector Store (chroma_db)
@@ -334,7 +340,14 @@ grade-advisor/
 ├── evals/
 │   └── run_benchmark.py           # Automated evaluation suite & scorecard reporter
 ├── ui/
-│   └── app.py                     # Gradio white-box inspection dashboard
+│   ├── server.py                  # FastAPI server: JSON API + static UI host (primary entry point)
+│   ├── static/                    # Hand-built "Metallurgical Datasheet" frontend
+│   │   ├── index.html             # Dashboard markup
+│   │   ├── app.css                # Industrial design system (IBM Plex, steel-blue accent)
+│   │   └── app.js                 # UI state, rendering and API wiring
+│   └── app.py                     # Optional Gradio white-box inspection dashboard (legacy)
+├── docs/
+│   └── ui-overview.png            # Dashboard screenshot used in this README
 ├── .env.example                   # Environment variable template
 ├── .gitignore                     # Git ignore rules protecting .env and caches
 ├── requirements.txt               # Python package dependencies
@@ -389,11 +402,26 @@ python evals/run_benchmark.py
 python -m pytest evals/run_benchmark.py -v
 ```
 
-### 6. Launch the Gradio Web Application
+### 6. Launch the Web Application
+```bash
+# Primary entry point: FastAPI server hosting the custom dashboard
+python ui/server.py
+```
+Open [http://127.0.0.1:7860](http://127.0.0.1:7860) in your web browser.
+
+The server exposes a small JSON API alongside the static dashboard:
+
+| Endpoint | Method | Description |
+| --- | --- | --- |
+| `/api/health` | GET | Active router mode, model name and catalog size (drives the status chip) |
+| `/api/catalog` | GET | All 13 verified grades for the catalog explorer |
+| `/api/query` | POST | Runs the dual-stage hybrid retrieval; body `{"query": "..."}` |
+
+#### Optional: Gradio inspection dashboard
+A self-contained Gradio build of the same white-box dashboard is kept for quick internal demos:
 ```bash
 python ui/app.py
 ```
-Open [http://127.0.0.1:7860](http://127.0.0.1:7860) in your web browser.
 
 ---
 
